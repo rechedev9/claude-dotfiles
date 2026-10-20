@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>scroll-page device diag</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        background: #0b0c10;
+        color: #eee;
+        font:
+          14px/1.4 system-ui,
+          sans-serif;
+      }
+      body {
+        height: 500vh;
+      }
+      .top {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        padding: 10px 12px;
+        background: #15171d;
+        border-bottom: 1px solid #2a2d36;
+      }
+      .top h1 {
+        margin: 0 0 4px;
+        font-size: 15px;
+      }
+      .top p {
+        margin: 2px 0;
+        color: #aab;
+      }
+      .panes {
+        position: fixed;
+        inset: 0;
+        top: 112px;
+        display: grid;
+        grid-template-rows: repeat(3, 1fr);
+        gap: 6px;
+        padding: 6px;
+        z-index: 1;
+      }
+      .pane {
+        position: relative;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 6px;
+        background: #000;
+        border: 1px solid #2a2d36;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .pane video {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .pane canvas {
+        display: none;
+      }
+      .meta {
+        padding: 8px;
+        width: 150px;
+        font:
+          12px/1.35 ui-monospace,
+          monospace;
+        color: #cdd;
+      }
+      .meta b {
+        display: block;
+        font-size: 13px;
+        color: #fff;
+      }
+      .st {
+        display: inline-block;
+        margin: 4px 0;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: #334;
+      }
+      .st.moving {
+        background: #1f6b3a;
+      }
+      .st.frozen {
+        background: #8b2222;
+      }
+      .st.error {
+        background: #8b2222;
+      }
+      button {
+        margin-top: 6px;
+        padding: 6px 10px;
+        border: 0;
+        border-radius: 6px;
+        background: #d8ff3e;
+        color: #000;
+        font-weight: 600;
+      }
+      textarea {
+        width: 100%;
+        height: 52px;
+        margin-top: 6px;
+        background: #000;
+        color: #9ab;
+        border: 1px solid #333;
+        font:
+          11px ui-monospace,
+          monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="top">
+      <h1>scroll-page device diag</h1>
+      <p id="hint">Scroll this page up and down a few times. Each pane should turn MOVING.</p>
+      <p id="info"></p>
+      <button id="copy" type="button">Copy report</button>
+      <textarea id="out" readonly></textarea>
+    </div>
+    <div class="panes" id="panes"></div>
+    <script>
+      // Three ways to show the same clip. blob: how the kit loads it. direct: the
+      // URL as src, so seeking needs HTTP range support. play: plain playback, so a
+      // frozen pane here means the file itself cannot be decoded on this device.
+      const params = new URLSearchParams(location.search);
+      const clip = params.get("clip") || "/clips/hero-m.mp4";
+      const modes = ["blob", "direct", "play"];
+      const panes = [];
+      const log = [];
+      let maxP = 0;
+
+      function hashFrame(ctx, video) {
+        try {
+          ctx.drawImage(video, 0, 0, 16, 16);
+          const d = ctx.getImageData(0, 0, 16, 16).data;
+          let h = 0;
+          for (let i = 0; i < d.length; i += 4)
+            h = (h * 31 + (d[i] >> 3) + (d[i + 1] >> 3) * 7 + (d[i + 2] >> 3) * 13) >>> 0;
+          return h;
+        } catch (e) {
+          return -1;
+        }
+      }
+
+      function makePane(mode) {
+        const root = document.createElement("div");
+        root.className = "pane";
+        const video = document.createElement("video");
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute("playsinline", "");
+        video.setAttribute("muted", "");
+        video.preload = mode === "play" ? "auto" : "none";
+        if (mode === "play") {
+          video.loop = true;
+          video.autoplay = true;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = 16;
+        canvas.height = 16;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        root.append(video, canvas, meta);
+        const pane = {
+          mode,
+          video,
+          ctx,
+          meta,
+          hashes: new Set(),
+          seeked: 0,
+          stuck: 0,
+          lastSeekAt: 0,
+          primed: false,
+          error: "",
+        };
+        for (const ev of ["loadedmetadata", "error", "stalled", "emptied"]) {
+          video.addEventListener(ev, () =>
+            log.push(`${mode}:${ev}@${(performance.now() / 1000).toFixed(1)}s`),
+          );
+        }
+        video.addEventListener("seeked", () => {
+          pane.seeked += 1;
+          pane.lastSeekAt = 0;
+        });
+        video.addEventListener("error", () => {
+          pane.error = video.error ? `code ${video.error.code}` : "error";
+        });
+        if (mode === "blob") {
+          fetch(clip)
+            .then((r) => {
+              if (!r.ok) throw new Error(String(r.status));
+              return r.blob();
+            })
+            .then((b) => {
+              video.src = URL.createObjectURL(b);
+            })
+            .catch((e) => {
+              pane.error = `fetch ${e.message}`;
+            });
+        } else {
+          video.src = clip;
+          if (mode === "direct") video.load();
+        }
+        panes.push(pane);
+        return root;
+      }
+
+      // iOS paints nothing on seek until the element has played once; a
+      // play()/pause() inside a gesture (or on load, when allowed) unlocks it.
+      function prime() {
+        for (const p of panes) {
+          const v = p.video;
+          if (p.mode === "play") {
+            if (v.paused) {
+              const r = v.play();
+              if (r && r.catch) r.catch(() => undefined);
+            }
+            continue;
+          }
+          if (p.primed || v.readyState < 1) continue;
+          const done = v.play();
+          if (done && done.then)
+            done
+              .then(() => {
+                v.pause();
+                p.primed = true;
+              })
+              .catch(() => undefined);
+          else p.primed = true;
+        }
+      }
+      for (const ev of ["touchstart", "touchend", "pointerdown", "click", "scroll"]) {
+        window.addEventListener(ev, prime, { passive: true });
+      }
+
+      function setStatus(p, p01) {
+        const dur = p.video.duration || 0;
+        let st = "WAITING";
+        let cls = "";
+        if (p.error) {
+          st = "ERROR";
+          cls = "error";
+        } else if (p.hashes.size >= 3) {
+          st = "MOVING";
+          cls = "moving";
+        } else if (p.mode !== "play" && maxP > 0.35) {
+          st = "FROZEN";
+          cls = "frozen";
+        } else if (p.mode === "play" && p.video.paused) {
+          st = "TAP TO PLAY";
+        } else if (p.mode === "play" && p.video.currentTime > 1.5) {
+          st = "FROZEN";
+          cls = "frozen";
+        }
+        p.status = st;
+        p.meta.innerHTML =
+          `<b>${p.mode}</b><span class="st ${cls}">${st}</span><br>` +
+          `t ${p.video.currentTime.toFixed(2)} / ${dur.toFixed(1)}<br>` +
+          `ready ${p.video.readyState} seeking ${p.video.seeking ? 1 : 0}<br>` +
+          `seeked ${p.seeked} frames ${p.hashes.size}<br>` +
+          (p.mode === "play" ? "" : `p ${p01.toFixed(2)} stuck ${p.stuck}<br>`) +
+          (p.error ? `<span class="st error">${p.error}</span>` : "");
+      }
+
+      // scrollY is polled per frame: the scroll event lags on iOS.
+      function tick() {
+        const maxY = Math.max(document.documentElement.scrollHeight - innerHeight, 1);
+        const p01 = Math.min(Math.max(scrollY / maxY, 0), 1);
+        if (p01 > maxP) maxP = p01;
+        const now = performance.now();
+        for (const p of panes) {
+          const v = p.video;
+          if (p.mode !== "play" && v.readyState >= 1 && v.duration > 0) {
+            const t = Math.max(p01 * v.duration, 0.001);
+            if (v.seeking && p.lastSeekAt && now - p.lastSeekAt > 700) {
+              p.stuck += 1;
+              p.lastSeekAt = 0;
+            }
+            if (!v.seeking && Math.abs(v.currentTime - t) > 0.012) {
+              v.currentTime = t;
+              p.lastSeekAt = now;
+            }
+          }
+          if (v.readyState >= 2) {
+            const h = hashFrame(p.ctx, v);
+            if (h >= 0) p.hashes.add(h);
+          }
+          setStatus(p, p01);
+        }
+        document.getElementById("info").textContent =
+          `${clip} | scrolled ${(maxP * 100).toFixed(0)}% max | ${innerWidth}x${innerHeight} dpr ${devicePixelRatio}`;
+        requestAnimationFrame(tick);
+      }
+
+      function report() {
+        return JSON.stringify({
+          ua: navigator.userAgent,
+          clip,
+          viewport: [innerWidth, innerHeight, devicePixelRatio],
+          maxScrolled: Number(maxP.toFixed(2)),
+          sda: CSS.supports("animation-timeline: scroll()"),
+          reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+          panes: panes.map((p) => ({
+            mode: p.mode,
+            status: p.status,
+            frames: p.hashes.size,
+            seeked: p.seeked,
+            stuck: p.stuck,
+            primed: p.primed,
+            duration: p.video.duration || 0,
+            error: p.error,
+          })),
+          events: log.slice(0, 40),
+        });
+      }
+
+      const host = document.getElementById("panes");
+      for (const m of modes) host.append(makePane(m));
+      document.getElementById("copy").addEventListener("click", () => {
+        const text = report();
+        document.getElementById("out").value = text;
+        if (navigator.clipboard) navigator.clipboard.writeText(text).catch(() => undefined);
+      });
+      window.addEventListener("load", prime);
+      requestAnimationFrame(tick);
+    </script>
+  </body>
+</html>

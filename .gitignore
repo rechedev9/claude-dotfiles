@@ -1,0 +1,9 @@
+node_modules/
+*.bak
+*.bak-*
+
+# Never in this repo, however they got here
+.credentials.json
+settings.local.json
+.env
+.env.*

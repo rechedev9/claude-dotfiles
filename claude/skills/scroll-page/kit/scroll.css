@@ -1,0 +1,482 @@
+/* scroll-page kit: the mechanism. It reads two Tailwind @theme tokens,
+   --color-canvas and --color-accent; every other colour and face is the page's. */
+
+:root {
+  --sc-gutter: clamp(1.25rem, 5vw, 5.5rem);
+  --sc-z-stage: 1;
+  --sc-z-copy: 20;
+  --sc-z-chrome: 60;
+  --sc-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --sc-smooth: cubic-bezier(0.333, 0, 0.667, 1);
+}
+
+/* clip, not hidden: overflow hidden on an ancestor breaks position: sticky. */
+body {
+  overflow-x: clip;
+}
+
+/* ------------------------------------------------------------------ acts */
+.sc-act {
+  position: relative;
+  view-timeline: --sc-act block;
+}
+.sc-act--pinned {
+  height: calc(var(--sc-span, 1.5) * 100vh);
+}
+.sc-stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  overflow: clip;
+  z-index: var(--sc-z-stage);
+}
+
+/* ground: one fixed layer per act, fading in over the act's first 35%. Later
+   acts stack on earlier ones, which is the drift. Keep the page background on
+   body only: a background on a wrapper paints over this layer. */
+.sc-ground {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--sc-ground);
+  animation: sc-ground linear both;
+  animation-timeline: --sc-act;
+  animation-range: contain 0% contain 35%;
+}
+.sc-act--flow > .sc-ground {
+  animation-range: cover 0% cover 35%;
+}
+@keyframes sc-ground {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ----------------------------------------------------------------- media */
+.sc-media,
+.sc-media .sc-poster,
+.sc-media .sc-poster img,
+.sc-media .sc-clip {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+.sc-media .sc-poster img,
+.sc-media .sc-clip {
+  object-fit: cover;
+}
+.sc-clip {
+  opacity: 0;
+  transition: opacity 380ms var(--sc-ease-out);
+}
+.sc-poster {
+  z-index: 0;
+  transition: opacity 380ms var(--sc-ease-out);
+}
+.sc-has-clip .sc-clip {
+  opacity: 1;
+}
+.sc-has-clip .sc-poster {
+  opacity: 0;
+}
+
+/* ----------------------------------------------------------------- scrims */
+.sc-scrim {
+  --sc-scrim-c: var(--sc-ground, var(--color-canvas));
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: linear-gradient(
+    var(--sc-scrim-angle, 180deg),
+    color-mix(in oklab, var(--sc-scrim-c) 78%, transparent) 0%,
+    color-mix(in oklab, var(--sc-scrim-c) 30%, transparent) 42%,
+    transparent 68%
+  );
+}
+.sc-scrim--bottom {
+  --sc-scrim-angle: 0deg;
+}
+.sc-scrim--lead {
+  background: linear-gradient(
+    to top right,
+    color-mix(in oklab, var(--sc-scrim-c) 94%, transparent) 0%,
+    color-mix(in oklab, var(--sc-scrim-c) 72%, transparent) 30%,
+    color-mix(in oklab, var(--sc-scrim-c) 30%, transparent) 52%,
+    transparent 72%
+  );
+}
+.sc-scrim--trail {
+  background: linear-gradient(
+    to top left,
+    color-mix(in oklab, var(--sc-scrim-c) 94%, transparent) 0%,
+    color-mix(in oklab, var(--sc-scrim-c) 72%, transparent) 30%,
+    color-mix(in oklab, var(--sc-scrim-c) 30%, transparent) 52%,
+    transparent 72%
+  );
+}
+.sc-scrim--band {
+  background: linear-gradient(
+    to top,
+    color-mix(in oklab, var(--sc-scrim-c) 94%, transparent) 0%,
+    color-mix(in oklab, var(--sc-scrim-c) 74%, transparent) 22%,
+    color-mix(in oklab, var(--sc-scrim-c) 30%, transparent) 42%,
+    transparent 58%
+  );
+}
+.sc-scrim--vignette {
+  background: radial-gradient(
+    120% 90% at 50% 45%,
+    transparent 40%,
+    color-mix(in oklab, var(--sc-scrim-c) 70%, transparent) 100%
+  );
+}
+
+/* ------------------------------------------------------------------- copy */
+.sc-copy {
+  position: absolute;
+  z-index: var(--sc-z-copy);
+  inset-inline: var(--sc-gutter);
+  max-width: min(46rem, 76vw);
+}
+.sc-copy--lead {
+  bottom: clamp(3rem, 12vh, 9rem);
+}
+/* transform, not translate: a Cue animates translate for its rise */
+.sc-copy--center {
+  inset-inline: auto;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+.sc-copy--trail {
+  inset-inline: auto;
+  right: var(--sc-gutter);
+  bottom: clamp(3rem, 12vh, 9rem);
+  text-align: right;
+}
+
+/* -------------------------------------------------------------------- cues
+   Each Cue ships its own @keyframes (opacity, translate, visibility) and sets
+   animation-name and animation-range inline; this is the shared timeline. */
+.sc-cue {
+  animation-timeline: --sc-act;
+  animation-fill-mode: both;
+  animation-timing-function: linear;
+  will-change: opacity, translate;
+}
+.sc-kin__w {
+  display: inline-block;
+  white-space: nowrap;
+}
+.sc-kin__m {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  /* room for descenders under the line mask */
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+}
+.sc-kin__u {
+  display: inline-block;
+  animation: sc-kin-in var(--sc-smooth) both;
+  animation-timeline: --sc-act;
+  will-change: opacity, translate;
+}
+@keyframes sc-kin-in {
+  from {
+    opacity: 0;
+    translate: 0 100%;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+.sc-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------- reveal */
+.sc-reveal {
+  animation-timeline: --sc-act;
+  animation-fill-mode: both;
+  animation-timing-function: var(--sc-smooth);
+  will-change: clip-path;
+}
+@keyframes sc-reveal-up {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes sc-reveal-down {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes sc-reveal-left {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes sc-reveal-right {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes sc-reveal-iris {
+  from {
+    clip-path: circle(0% at 50% 50%);
+  }
+  to {
+    clip-path: circle(78% at 50% 50%);
+  }
+}
+
+/* --------------------------------------------------------------- parallax */
+.sc-parallax {
+  animation: sc-parallax linear both;
+  animation-timeline: --sc-act;
+  will-change: translate;
+}
+@keyframes sc-parallax {
+  from {
+    translate: 0 calc(var(--sc-rate, 0) * -50px);
+  }
+  to {
+    translate: 0 calc(var(--sc-rate, 0) * 50px);
+  }
+}
+
+/* -------------------------------------------------------------------- pan
+   100cqw is the box width, which a 100vw with a scrollbar is not. */
+.sc-rail-box {
+  container-type: inline-size;
+  width: 100%;
+  height: 100%;
+}
+.sc-rail {
+  display: flex;
+  width: max-content;
+  height: 100%;
+  animation: sc-pan linear both;
+  animation-timeline: --sc-act;
+  animation-range: contain;
+  will-change: translate;
+}
+@keyframes sc-pan {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: calc(min(0px, 100cqw - 100%) * (1 + var(--sc-pan-extra, 0))) 0;
+  }
+}
+
+/* --------------------------------------------------------------- progress */
+.sc-progress {
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 2px;
+  z-index: var(--sc-z-chrome);
+  background: var(--color-accent);
+  transform-origin: 0 50%;
+  animation: sc-progress linear both;
+  animation-timeline: scroll(root block);
+}
+@keyframes sc-progress {
+  from {
+    scale: 0 1;
+  }
+  to {
+    scale: 1 1;
+  }
+}
+
+/* ---------------------------------------------------------------- in-view
+   Hidden only once html.sc-js is set by the inline head script, so a no-JS
+   visitor and a crawler see the copy. */
+[data-sc-in],
+[data-sc-stagger] > * {
+  transition:
+    opacity 620ms var(--sc-ease-out),
+    translate 620ms var(--sc-ease-out);
+}
+[data-sc-stagger] > * {
+  transition-delay: calc(var(--sc-i, 0) * var(--sc-stagger, 0ms));
+}
+html.sc-js [data-sc-in]:not(.sc-in):not([data-sc-stagger]),
+html.sc-js [data-sc-stagger]:not(.sc-in) > * {
+  opacity: 0;
+  translate: 0 14px;
+}
+
+/* ---------------------------------------------------------------- pointer */
+[data-sc-spotlight] {
+  isolation: isolate;
+}
+:where([data-sc-spotlight]) {
+  position: relative;
+}
+[data-sc-spotlight]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(
+    28rem 28rem at calc(var(--sc-mx, 0.5) * 100%) calc(var(--sc-my, 0.5) * 100%),
+    color-mix(in oklab, var(--color-accent) 16%, transparent),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 420ms var(--sc-ease-out);
+}
+[data-sc-spotlight]:hover::after {
+  opacity: 1;
+}
+
+/* ----------------------------------------------------------------- mobile */
+@media (max-width: 860px) {
+  .sc-copy {
+    inset-inline: var(--sc-gutter);
+    max-width: none;
+  }
+  .sc-copy--trail {
+    text-align: left;
+  }
+  /* the gutter inset above would pull the centred box half a width left */
+  .sc-copy--center {
+    left: 50%;
+    right: auto;
+    width: calc(100% - 2 * var(--sc-gutter));
+  }
+  /* trail copy spans the width here, so its scrim becomes the band */
+  .sc-scrim--trail {
+    background: linear-gradient(
+      to top,
+      color-mix(in oklab, var(--sc-scrim-c) 94%, transparent) 0%,
+      color-mix(in oklab, var(--sc-scrim-c) 74%, transparent) 22%,
+      color-mix(in oklab, var(--sc-scrim-c) 30%, transparent) 42%,
+      transparent 58%
+    );
+  }
+}
+
+/* --------------------------------------------------------- reduced motion
+   Fewer and gentler, not zero: opacity still cues, every position change goes,
+   and the rail hands its travel back as a native scroll region. */
+@media (prefers-reduced-motion: reduce) {
+  .sc-cue,
+  .sc-parallax {
+    translate: none !important;
+  }
+  .sc-kin__u {
+    animation: none !important;
+    opacity: 1 !important;
+    translate: none !important;
+  }
+  .sc-reveal {
+    animation: none !important;
+    clip-path: none !important;
+  }
+  .sc-rail {
+    animation: none !important;
+    translate: none !important;
+  }
+  /* with the rail static, a pinned pan act would be a dead span of scroll */
+  [data-sc-act="pan"].sc-act--pinned {
+    height: auto;
+  }
+  [data-sc-act="pan"] .sc-cue {
+    animation: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+  [data-sc-act="pan"] .sc-stage {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+  }
+  .sc-rail > * {
+    scroll-snap-align: center;
+  }
+  [data-sc-in],
+  [data-sc-stagger] > * {
+    translate: none !important;
+    transition-duration: 220ms;
+  }
+  [data-sc-spotlight]::after {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------- no timelines
+   Firefox before 160 and anything older renders the settled page. */
+@supports not (animation-timeline: scroll()) {
+  .sc-cue,
+  .sc-kin__u,
+  .sc-reveal,
+  .sc-parallax,
+  .sc-rail,
+  .sc-ground {
+    animation: none !important;
+  }
+  .sc-cue,
+  .sc-kin__u {
+    opacity: 1 !important;
+    visibility: visible !important;
+    translate: none !important;
+  }
+  .sc-reveal {
+    clip-path: none !important;
+  }
+  .sc-parallax,
+  .sc-rail {
+    translate: none !important;
+  }
+  .sc-ground {
+    position: absolute;
+  }
+  .sc-progress {
+    display: none;
+  }
+  [data-sc-act="pan"].sc-act--pinned {
+    height: auto;
+  }
+  [data-sc-act="pan"] .sc-stage {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+  }
+  .sc-rail > * {
+    scroll-snap-align: center;
+  }
+}
