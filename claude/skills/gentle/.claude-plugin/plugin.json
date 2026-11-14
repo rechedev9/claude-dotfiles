@@ -1,0 +1,6 @@
+{
+  "name": "gentle",
+  "version": "0.1.0",
+  "description": "Gentle-shell look for the Code tab: pink palette, petal backdrop and a Status / Changes / TODO pane",
+  "types": "./types/index.d.ts"
+}

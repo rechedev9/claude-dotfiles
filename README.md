@@ -56,6 +56,7 @@ bun sync.ts apply
 | `claude/statusline.sh` | The status line. Needs Bash, `git` and `jq`.                                                         |
 | `claude/hooks/`        | `skill-gates.ts`, the commit and PR gate below, and the SessionStart hook that herdr installs.       |
 | `claude/skills/`       | My skills, plus `humanizer` and `scroll-page`, which are MIT forks with their `LICENSE`.             |
+| `claude/skills/gentle/` | A mod for the Desktop Code tab: dark pink theme, petal backdrop and the RSN pane (Status, Changes, TODO). `/gentle` opens the pane. |
 | `claude/scripts/`      | `trash` and `browser-tools`, with their `.cmd` and Bash launchers.                                   |
 | `sync.ts`              | The script above. No dependencies.                                                                   |
 
